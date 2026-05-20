@@ -1,0 +1,449 @@
+---
+etitle: EDA Report
+title: "How can the Quality of an Apple be determined?"
+author: "Andrej Kiselev"  
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+library(broom) 
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(GGally)
+library(ggcorrplot)
+library(kableExtra)
+library(caTools)
+library(class)
+library(caret)
+library(randomForest)
+```
+
+## Introduction
+
+  This report examines unique attributes of Apples to understand how they impact the quality. The paper uses methods such as Exploratory Data Analysis, Correlation analysis, and multiple models to best understand the data and predict an Apple's Quality. The data set used in this analysis consists of 8 independent variables with one dependent variable representing quality. One of the independent variables consists of values to identify each sample, which means that it will not be used in the model analysis.
+
+  The methods of analysis that will be conducted allow visual and numerical summary statistics to best interpret the final model that will help predict an Apples quality based on its unique attributes. Multiple models will be tested to produce one with highest accuracy rate. The accuracy rate explains how well the model predicts the result.
+
+  To further understand the data set, an Exploratory Data Analysis will be performed before the model creation. This analysis will examine the variables, numeric summaries, relationships, and unique characteristics. It is important to examine these statistics as it will prepare for the model avoiding any errors.
+
+
+```{r, echo = FALSE}
+Apple <- read_csv("apple_quality.csv")
+data.frame(Variables = names(Apple)) %>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+```
+
+## Variable Identification
+
+  The first step in the EDA is to identify and describe each variable. Understanding the type and role of each variable helps conduct an organized analysis. The data set has a total of 4000 observations. This allows a deep understanding of each variable due to the sample size.
+
+  The dependent variable is "Quality", which is a categorical Variable with two outcomes: "good" and "bad". To help create the model, this variable is converted to a factor.  
+
+```{r, echo = FALSE}
+Apple$Quality <- as.factor(Apple$Quality)
+info <- data.frame(
+  Variable = names(Apple),
+  DataType = sapply(Apple, class),
+  Category = sapply(Apple, function(x) {
+    if (is.numeric(x)) {
+      "Continuous"
+    } else if (is.factor(x)) {
+      "Categorical"
+    }
+  }),
+  stringsAsFactors = FALSE)
+
+info$Role <- c("Independent", "Independent", "Independent","Independent", "Independent", "Independent","Independent", "Independent" ,"Dependent")
+# Add roles and descriptions manually
+info$Description <- c(
+  "Identifies each fruit of the data size",
+  "Explains the size of the Apple",
+  "Explains the weight of the Apple",
+  "The degree of sweetness for the Apple",
+  "Explains how crunchy the Apple is",
+  "Explains the level of juiciness",
+  "Explains the stage of ripeness",
+  "The Acidity level of the Apple",
+  "Overall Quality of the Apple"
+)
+info %>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+```
+
+## Univariate Analysis
+
+  After identifying and describing each variable, the next step is to examine them through univariate analysis. This consists of understanding the central tendency, measure of dispersion, and basic visualization.
+
+  The first step is to examine the numeric summaries of each variable independently. This describes important statistical characteristics, such as the mean, median, min/max, variance, and standard deviation.
+  
+```{r, echo = FALSE}
+num_data <- Apple[, sapply(Apple, is.numeric)]
+Numeric_table <- data.frame(
+  Mean = sapply(num_data, mean),
+  Median = sapply(num_data, median),
+  Min = sapply(num_data, min),
+  Max = sapply(num_data, max),
+  Variance = sapply(num_data, var),
+  SD = sapply(num_data, sd),
+  Range = sapply(num_data, function(x) max(x) - min(x)),
+  IQR = sapply(num_data, IQR)
+)
+
+Numeric_table %>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+```
+
+  Some interesting interpretation that can be made from the numerical summaries is that variables such as weight and size have negative sample values. This is an interesting outcome of the variable. While the data set source has no interpretation of this, we can assume that it is calculated from a point of scale.
+  
+  Now that the continuous variables have been summarized, it is also important to look at the categorical variable. The variable "Quality" represents whether an apple is classified as good or bad. It is important to understand the distribution of outputs in this data set. Below will be a table and histogram to examine the counts. 
+
+  Good is represented as 1, while bad is represented as 0.
+
+```{r, echo = FALSE}
+Apple$Quality <- as.numeric(Apple$Quality) - 1#Allows the Variable to be seen as categorical
+qty <- Apple$Quality
+qty_sum <- data.frame(
+  Category = names(table(qty)),
+  Count = as.vector(table(qty)),
+  Percent = round(as.vector(prop.table(table(qty))) * 100, 1)
+)
+qty_sum%>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+```
+  
+  Above you can see that it is a pretty even split between "good" and "bad" apples. There are 0.1 percent more good apples in the data set. Below is a visual representation to better demonstrate the distribution.
+  
+```{r, echo = FALSE}
+qty_bar <- ggplot(data = Apple, aes(x = Quality)) + geom_bar(fill = "steelblue", color = "black") + labs(title = "Bar Chart of Apple Quality", x = "Quality",y = "Count")  
+qty_bar 
+```
+
+ The final part of the univariate analysis is a visualization of each continuous variable. The distribution and spread is represented with Histograms and Box plots. The histograms will evaluate whether the variable has a normal distribution. The box plot will indicate any outliers. This visual analysis helps further understand each variable. Since these variables are numerical, this mainly analyzes the data values than it's characteristics, such as in the categorical visualization. 
+
+**Visualization of Variable Size**
+ 
+```{r, echo = FALSE}
+  hist(Apple$Size,
+       main = "Histogram of Size",
+       xlab = "Size",
+       col = "steelblue",
+       border = "black")
+
+boxplot(Apple$Size,
+        main = "Boxplot of Size",
+       xlab = "Size",
+       col = "steelblue",
+       border = "black")
+
+```
+
+Above is a histogram and box plot of the Variable "Size". The histogram indicates that it has a normal distribution, suggesting that no variable transformation is required. While the Box plot does have outliers, at a sample size of 4000 observations, this is natural. No unnatural values were found during the data set inspection.
+
+**Visualization of Variable Weight**
+
+```{r, echo = FALSE}
+  hist(Apple$Weight,
+       main = "Histogram of Weight",
+       xlab = "Weight",
+       col = "steelblue",
+       border = "black")
+
+boxplot(Apple$Weight,
+        main = "Boxplot of Weight",
+       xlab = "Weight",
+       col = "steelblue",
+       border = "black")
+
+```
+
+The visualization of "Weight" is similar to the previous variable. A normal distribution with some outliers visible in the box plot. 
+
+**Visualization of Variable Sweetness**
+
+```{r, echo = FALSE}
+  hist(Apple$Sweetness,
+       main = "Histogram of Sweetness",
+       xlab = "Sweetness",
+       col = "steelblue",
+       border = "black")
+
+boxplot(Apple$Sweetness,
+        main = "Boxplot of Sweetness",
+       xlab = "Sweetness",
+       col = "steelblue",
+       border = "black")
+
+```
+
+The histogram indicates a normal distribution. All values do seem natural after an inspection of the data set. There is  no indication of unnatural values in the histogram.
+
+**Visualization of Variable Crunchiness**
+
+```{r, echo = FALSE}
+  hist(Apple$Crunchiness,
+       main = "Histogram of Crunchiness",
+       xlab = "Crunchiness",
+       col = "steelblue",
+       border = "black")
+
+boxplot(Apple$Crunchiness,
+        main = "Boxplot of Crunchiness",
+       xlab = "Crunchiness",
+       col = "steelblue",
+       border = "black")
+
+```
+
+The histogram does appear to have minor right skew, but it is not signifiant enough. Therefore, it still is a normal distribution with most values around the center. 
+
+**Visualization of Variable Juiciness**
+
+```{r, echo = FALSE}
+  hist(Apple$Juiciness,
+       main = "Histogram of Juiciness",
+       xlab = "Juiciness",
+       col = "steelblue",
+       border = "black")
+
+boxplot(Apple$Juiciness,
+        main = "Boxplot of Juiciness",
+       xlab = "Juiciness",
+       col = "steelblue",
+       border = "black")
+
+```
+
+The histogram has a slight left skew, but still indicating a normal distribution. Most values are in proximity to the center. No unnatural outliers are to be found. 
+**Visualization of Variable Ripeness**
+
+```{r, echo = FALSE}
+  hist(Apple$Ripeness,
+       main = "Histogram of Ripeness",
+       xlab = "Ripeness",
+       col = "steelblue",
+       border = "black")
+
+boxplot(Apple$Ripeness,
+        main = "Boxplot of Ripeness",
+       xlab = "Ripeness",
+       col = "steelblue",
+       border = "black")
+
+```
+
+Similar visual representation to that of the previous variable. No unique distribution or patters noted. 
+
+**Visualization of Variable Acidity**
+
+```{r, echo = FALSE}
+  hist(Apple$Acidity,
+       main = "Histogram of Acidity",
+       xlab = "Acidity",
+       col = "steelblue",
+       border = "black")
+
+boxplot(Apple$Acidity,
+        main = "Boxplot of Acidity",
+       xlab = "Acidity",
+       col = "steelblue",
+       border = "black")
+
+```
+
+The visualization of each numeric variable indicates that no transformations are required. All variables have normal distributions with no unnatural outliers. All box plots do have outliers, but at a observation size of 4000, this is expected. No indication of outliers that do not belong to the data set. 
+
+## Bivariate Analysis
+
+After the examination of each variable, it is important to do a Bivariate analysis. This explores the relationships between variables to identify any multicollinearity. It will also help identify patterns and explain variables further. 
+
+To first visualize all of the relationships, a pairwise plot is performed. This provides a large overview of the relationships.
+
+```{r, echo = FALSE}
+ggpairs(Apple)
+```
+
+The plot above represents the distribution, correlation, box plot, and a scatterplot. This further proves that the continuous variables have a normal distribution. 
+
+The important aspect of this plot is to examine the correlation values. Values that are too high, represent a sign of multicollinearity, which will cause issues when creating the model. The highest correlation is between "Sweetness" and "Size". They have a negative correlation of 0.325. This means that sweeter apples are more likely to be smaller. While it is a higher correlation in comparison to other variables, it is not significant enough to remove it.
+
+All correlations involving the variable "A_id" are insignificant, as it is a unique identifier.
+
+While the plot provides a detailed overview of the relationships and distributions, a heat map will provide a clearer and efficient representation for the strength of correlations.
+
+```{r, echo = FALSE,warning=FALSE}
+corr2 <- round(cor(Apple),2)
+ggcorrplot(corr2, method="circle")
+```
+
+Since "Quality" is a categorical variable, a box plot bivariate analysis will be performed to better understand their relationships. It is already represented in the pairwise plot, but this will be a better representation. Each variable is independently related to Quality in a clear visualization.
+
+```{r, echo = FALSE}
+boxplot(Apple$Size ~ Apple$Quality, main = "Size by Quality")
+boxplot(Apple$Weight ~ Apple$Quality, main = "Weight by Quality")
+boxplot(Apple$Sweetness ~ Apple$Quality, main = "Sweetness by Quality")
+boxplot(Apple$Crunchiness ~ Apple$Quality, main = "Crunchiness by Quality")
+boxplot(Apple$Juiciness ~ Apple$Quality, main = "Juiciness by Quality")
+boxplot(Apple$Ripeness ~ Apple$Quality, main = "Ripeness by Quality")
+boxplot(Apple$Acidity ~ Apple$Quality, main = "Acidity by Quality")
+```
+
+After examining the bivariate analysis, no removal of any variable due to high correlation is required. As explained in the report, all the variables do have some outliers. But further analysis in the data set indicates no unnatural values. This is also evident in the histograms showing a normal distribution. The data set will now be examined for missing values to identify any forms of bias.
+
+## Missing Values Treatment
+
+```{r, echo = FALSE}
+sum(is.na(Apple))
+```
+
+No missing values are found in the data set, showing that no replacement or elimination is required. 
+
+The Explanatory Data Analysis fully examined each variable and the relationships in the data set. There are no missing values or outliers that required any elimination, allowing the current dataset to be ready for modeling. With this information, the next part of the report will be the regression modeling and further methods to examine what factors impact Apples.
+
+## Model Creation
+
+Since the dependent variable is categorical, the best approach to creating an efficient model, is to recognize that this is a classification.
+
+One of the methods this report will be examining is a log regression. A log regression will be able to classify an Apple being either "good" or "bad", depending on the values of each variable. A value of 1 will represent a good Apple, while a value of 0 will represent a bad Apple. A K-Nearest Neighbor and Random Forest will also be performed. It is important to perform multiple models to find the most efficient and accurate one. 
+These models will be evaluated through a confusion matrix, which will help indicate the model with the highest accuracy rate. The accuracy represents how well the model actually predicts based on the testing set. A higher rate represents a better model.
+
+To first choose a model, a forward Variable selection method will be used. It will start with the the order in the Data Description table of the EDA. The best fit model will be that with the lowest AIC value. This model will be tested with it's Test subset of the data set. Any further adjustments will be made once the model is interpreted
+
+```{r, echo = FALSE}
+model1 <- glm(Quality ~ Size,
+             data=Apple, family=binomial(link="logit"))
+model2 <- glm(Quality ~ Size + Weight,
+             data=Apple, family=binomial(link="logit"))
+model3 <- glm(Quality ~ Size + Weight + Sweetness,
+             data=Apple, family=binomial(link="logit"))
+model4 <- glm(Quality ~ Size + Weight + Sweetness + Crunchiness,
+             data=Apple, family=binomial(link="logit"))
+model5 <- glm(Quality ~ Size + Weight + Sweetness + Crunchiness + Juiciness,
+             data=Apple, family=binomial(link="logit"))
+model6 <- glm(Quality ~ Size + Weight + Sweetness + Crunchiness + Juiciness + Ripeness,
+             data=Apple, family=binomial(link="logit"))
+model7 <- glm(Quality ~ Size + Weight + Sweetness + Crunchiness + Juiciness + Ripeness + Acidity,
+             data=Apple, family=binomial(link="logit"))
+AIC(model1, model2, model3, model4, model5, model6, model7)
+```
+
+
+Based on the AIC values, the model with lowest AIC includes all variables.
+
+**Therefore, the log regression equation is:** Quality ~ Size + Weight + Sweetness + Crunchiness + Juiciness + Ripeness + Acidity
+
+This model will be regressed and evaluated below. The subset used is 75% of the Apple Quality data set. This will allow the model to be tested with a confusion matrix. All final models need to be tested for accuracy rate to understand how well it can predict a value.
+
+
+```{r, echo = FALSE}
+set.seed(123)
+sample <- sample.split(Apple$Quality, SplitRatio = .75)
+train <- subset(Apple, sample == TRUE)
+test <- subset(Apple, sample == FALSE)
+
+train_log1<- glm(Quality ~ Size + Weight + Sweetness + Crunchiness + Juiciness + Ripeness + Acidity,
+             data=train, family=binomial(link="logit"))
+
+summary(train_log1) 
+
+```
+The model above suggests that Crunchiness is not of any significance. When a variable is not significant, it may not be eliminated. This will be validated if the AIC value of the model is below is less than the original. A lower AIC implies a more fit model.
+
+```{r,echo = FALSE}
+train_log2 <- glm(Quality ~ Size + Weight + Sweetness + Juiciness + Ripeness + Acidity,
+                data=train, family=binomial(link="logit"))
+summary(train_log2) 
+
+
+```
+This model does have a slightly lower AIC value. While the difference is minor, I will still be using it as my final Log Regression model.
+
+**Therefore, the final log regression is:** Quality ~ Size + Weight + Sweetness + Juiciness + Ripeness + Acidity
+
+From the regression model, one is able how each variable impacts the Quality. Attributes such as Size, Weight, Sweetness, and Juiciness have a positive relationship with Quality, suggesting that an increase of each attribute results in an Apple of higher quality. Variables such as Ripeness and Acidity have negative coefficients implying that an increase in these variables results in a decrease in Quality.
+
+To test how accurate the model predicts the quality of an apple, a confusion matrix is performed. This table suggests if the model is able to predict the right outcome based on the values of the independent variables. A higher accuracy rate implies a model that is able to predict the true positive and true negatively values at a more accurate rate.
+
+Below is the confusion matrix for the log regression model:
+```{r, echo = FALSE}
+glm.probs <- predict(train_log2, newdata=test, type="response")
+glm.pred <- ifelse(glm.probs > 0.5, "1", "0")
+
+# Confusion Matrix using test set
+matrix <- table(glm.pred, test$Quality)
+matrix %>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+741/1000 #Accuracy Rate
+```
+The model has an accuracy rate of 74.1%. A rate of 74.1% assumes that the model will predict the right outcome 741 times out of 1000 predictions. This is a good rate, as the model is able to make the right prediction more than half the time.
+
+While the rate is not bad, two more models will be performed in hopes to find a better predictor. 
+
+**K- Nearest Neighbor:** 
+A KNN model is a simple supervised machine learning method to predict an outcome based on it's neighboring attributes. It memorizes data and makes predictions based on near by values rather than learning a model such as in the regression model. The KNN model will not indicate the relationships of each variable to quality. 
+
+The model below is K-nearest Neighbor model which will predict the quality of an Apple based on given attributes. The accuracy of the model is described below in the confusion matrix. This indicates how well it is able to predict the output if variable values were to be given.
+
+```{r, echo = FALSE}
+train.X <- cbind(train$Size, train$Weight, train$Sweetness, train$Crunchiness,train$Juiciness, train$Ripeness, train$Acidity)
+test.X  <- cbind(test$Size, test$Weight, test$Sweetness, test$Crunchiness,test$Juiciness, test$Ripeness, test$Acidity)
+
+set.seed(1) # if case there is a tie, R will break it randomly
+knn.pred <- knn(train.X, test.X, train$Quality, k=3)
+matrix2 <- table(knn.pred, test$Quality)
+matrix2%>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+(436 + 463)/1000
+
+```
+The KNN model has an accuracy rate of 89.9%. This is a higher accuracy than the previous model. A model that is able to predict the right outcome almost 90% of the time is a really good predictor. This rate implies that if you are to add values to the KNN model, it will predict the same quality output as a sample 89.9% of the time.
+
+**Random Forest model:**
+A Random Forest Model is a machine learning algorithm that uses the outputs of many decision trees to produce the best predicted answer. Decision Trees break down the process by splitting up choices and their outcomes based on small attributes of each variable. The Random Forest Model uses multiple of these trees to find the most suitable output based on given attributes.
+
+Below is a a plot indicating the error rate based on the number of trees. I am using a value of 500 trees as suggested by Debisree Ray (2025). This number of trees will allow for a sufficient output, without using an excessive amount of computing power. The error rate is assumed to drop once more trees are used in the prediction process, which will be shown in the plot.
+```{r,echo=FALSE}
+train$Quality <- as.factor(train$Quality)
+test$Quality  <- as.factor(test$Quality)
+RFmodel <- randomForest(Quality ~ . - A_id, data = train, ntree = 500)
+RFpred <- predict(RFmodel, newdata = test)
+matrix3 <- table(RFpred, test$Quality)
+matrix3%>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+(428 +461)/1000
+plot(RFmodel)
+```
+
+The Accuracy rate is 88.9%. This implies that the Random Forest Model is less accurate than the K-nearest Neighbor method, but more accurate than the log regression model. 
+
+From the analysis of each model, we are able to choose the best predicting method.
+
+## Conclusion
+
+The report analyses multiple variables that are recognized as attributes of an Apple. These variables are used in multiple models throughout the paper to best predict the Quality of the Apple. Each attribute was analyzed through numeric and visual summaries. All histograms indicated that no variable transformation was required due to normal distributions. No unnatural outliers were to be found allowing for each variable to be used with no modifications necessary. 
+
+With no problems in the data samples, the process of modelling was quite easy. I decided to test three machine learning methods to find the best predictor. The Log Regression Model allowed to understand how an Apples Quality is impacted by each variable. For example, attributes such as Acidity and Ripeness cause the quality of an Apple to decrease. Such interpretation allows one to understand what makes an apple without having to always rely on inputting values into a model. 
+
+The other two models used in the report are not able to be as interpreted as the regression model, but both models do have higher accuracy rate. This implies that they are better predictors.
+
+The final model used in predicting the quality of an Apple is the K-nearest Neighbor method. This is a supervised machine learning method that has the highest accuracy rate of 89.9%. By using this model, we are able to predict the quality of an apple correctly 89.9% of the time. This model can be used in the production of apples to eliminate ones of predicted bad quality before being shipped and sold. 
+
+
+## References:
+
+Murray, L. (2026). Data Visualization and Statistical Analysis [All Slides]. ADS 3864, Kings University College.
+
+Ray, D. (2025, September 11). A comprehensive guide to random forests | by Debisree Ray | data science collective | medium. A Comprehensive Guide to Random Forests. https://medium.com/data-science-collective/a-comprehensive-guide-to-random-forests-8d840c902dd5 
+
+Kaggle. (2024). Apple Quality [Data set]. https://doi.org/10.34740/kaggle/dsv/7384155
